@@ -1,4 +1,29 @@
 name: Build RAGFlow ARM64 Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      ragflow_version:
+        description: 'RAGFlow version tag (e.g., v0.26.3)'
+        required: true
+        default: 'v0.26.3'
+      image_tag:
+        description: 'Docker image tag suffix'
+        required: true
+        default: 'arm64'
+
+env:
+  RAGFLOW_VERSION: ${{ github.event.inputs.ragflow_version }}
+  IMAGE_TAG: ${{ github.event.inputs.ragflow_version }}-${{ github.event.inputs.image_tag }}
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout RAGFlow source
+        uses: actions/checkout@v4
+        with:
+          repository: infiniflow/ragflow
           ref: ${{ env.RAGFLOW_VERSION }}
           path: ragflow
 
