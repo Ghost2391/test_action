@@ -182,6 +182,9 @@ RUN arch="$(uname -m)"; \
     fi
 
 # https://github.com/astral-sh/uv/issues/10462
+# ARM64 QEMU 构建优化：
+# 1. 限制并行编译数，避免 OOM（GitHub runner 仅 7GB 内存）
+# 2. 添加 piwheels 额外源，优先使用 ARM 预编译 wheel 跳过源码编译
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
         sed -i 's|pypi.org|mirrors.aliyun.com/pypi|g' uv.lock; \
@@ -191,7 +194,15 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
         sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
         sed -i 's|gitee.com|github.com|g' uv.lock; \
     fi; \
-    uv sync --python 3.13 --frozen --refresh-package litellm && \
+    arch="$(uname -m)"; \
+    EXTRA_INDEX_ARGS=""; \
+    if [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; then \
+        export UV_JOBS=2; \
+        export CARGO_BUILD_JOBS=2; \
+        export MAKEFLAGS="-j2"; \
+        EXTRA_INDEX_ARGS="--extra-index-url https://www.piwheels.org/simple"; \
+    fi; \
+    uv sync --python 3.13 --frozen --refresh-package litellm $EXTRA_INDEX_ARGS && \
     .venv/bin/python3 -m ensurepip --upgrade
 
 COPY .git /ragflow/.git
