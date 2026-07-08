@@ -19,18 +19,20 @@ env:
 jobs:
   build-arm64:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
+
     steps:
+      - name: Checkout build config (current repo)
+        uses: actions/checkout@v4
+        with:
+          path: build-config
+
       - name: Checkout RAGFlow source
         uses: actions/checkout@v4
         with:
           repository: infiniflow/ragflow
           ref: ${{ env.RAGFLOW_VERSION }}
           path: ragflow
-
-      - name: Checkout build config (current repo)
-        uses: actions/checkout@v4
-        with:
-          path: build-config
 
       - name: Replace with optimized Dockerfile
         run: |
@@ -51,19 +53,20 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
-      # ========== 构建 ragflow 主镜像 ==========
+      # ========== 构建并推送 RAGFlow ARM64 镜像 ==========
       # 前端使用 BUILDPLATFORM 原生 x86 架构极速编译
-      # 后端运行时使用 linux/arm64 架构
-      # 依赖直接使用官方 infiniflow/ragflow_deps:latest
+      # 后端运行时使用 linux/arm64 架构（QEMU 模拟）
+      # cache-from/cache-to: GHA 缓存，下次构建复用已编译层
       - name: Build and push RAGFlow ARM64 image
-        working-directory: ragflow
-        run: |
-          docker buildx build \
-            --platform linux/arm64 \
-            -f Dockerfile \
-            -t ${{ secrets.DOCKER_USERNAME }}/ragflow:${{ env.IMAGE_TAG }} \
-            --push \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: ragflow
+          file: ragflow/Dockerfile
+          platforms: linux/arm64
+          tags: ${{ secrets.DOCKER_USERNAME }}/ragflow:${{ env.IMAGE_TAG }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: ✅ Build completed
         run: |
@@ -72,3 +75,5 @@ jobs:
           echo "  Image: ${{ secrets.DOCKER_USERNAME }}/ragflow:${{ env.IMAGE_TAG }}"
           echo "  Architecture: linux/arm64"
           echo "=========================================="
+          echo ""
+          echo "下次构建将复用 GHA 缓存，速度会快很多"
