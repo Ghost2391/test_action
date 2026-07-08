@@ -1,67 +1,4 @@
 name: Build RAGFlow ARM64 Image
-
-on:
-  workflow_dispatch:
-    inputs:
-      ragflow_version:
-        description: 'RAGFlow version tag (e.g., v0.26.3)'
-        required: true
-        default: 'v0.26.3'
-      image_tag:
-        description: 'Docker image tag suffix'
-        required: true
-        default: 'arm64'
-      push_to_dockerhub:
-        description: 'Push to Docker Hub'
-        required: true
-        type: boolean
-        default: true
-
-env:
-  RAGFLOW_VERSION: ${{ github.event.inputs.ragflow_version }}
-  IMAGE_TAG: ${{ github.event.inputs.ragflow_version }}-${{ github.event.inputs.image_tag }}
-
-jobs:
-  build-arm64:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout RAGFlow source
-        uses: actions/checkout@v4
-        with:
-          repository: infiniflow/ragflow
-          ref: ${{ env.RAGFLOW_VERSION }}
-          path: ragflow
-
-      - name: Checkout build config (current repo)
-        uses: actions/checkout@v4
-        with:
-          path: build-config
-
-      - name: Replace with optimized Dockerfile
-        run: |
-          cp build-config/Dockerfile.arm64-optimized ragflow/Dockerfile
-          echo "Dockerfile replaced with ARM64 optimized version"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        if: ${{ github.event.inputs.push_to_dockerhub == 'true' }}
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_TOKEN }}
-
-      # ========== 第一步：构建 ragflow_deps 基础依赖镜像 ==========
-      - name: Build ragflow_deps (download dependencies)
-        run: |
-          cd ragflow
-          
           # 安装 Python 依赖用于运行 download_deps.py
           pip install huggingface_hub tqdm
           
@@ -75,12 +12,10 @@ jobs:
             -t ${{ secrets.DOCKER_USERNAME }}/ragflow_deps:${{ env.IMAGE_TAG }} \
             --load \
             .
-
       - name: Push ragflow_deps to Docker Hub
         if: ${{ github.event.inputs.push_to_dockerhub == 'true' }}
         run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/ragflow_deps:${{ env.IMAGE_TAG }}
-
       # ========== 第二步：构建 ragflow 主镜像 ==========
       # 前端使用 BUILDPLATFORM 原生 x86 架构极速编译
       # 后端运行时使用 linux/arm64 架构
@@ -97,12 +32,10 @@ jobs:
             -t ${{ secrets.DOCKER_USERNAME }}/ragflow:${{ env.IMAGE_TAG }} \
             --load \
             .
-
       - name: Push RAGFlow main image to Docker Hub
         if: ${{ github.event.inputs.push_to_dockerhub == 'true' }}
         run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/ragflow:${{ env.IMAGE_TAG }}
-
       - name: Image summary
         run: |
           echo "✅ Build completed!"
