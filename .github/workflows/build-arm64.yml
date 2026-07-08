@@ -1,44 +1,49 @@
 name: Build RAGFlow ARM64 Image
-          # 安装 Python 依赖用于运行 download_deps.py
-          pip install huggingface_hub tqdm
-          
-          # 运行依赖下载脚本
-          python3 download_deps.py
-          
-          # 构建 deps 镜像
-          docker buildx build \
-            --platform linux/arm64 \
-            -f Dockerfile.deps \
-            -t ${{ secrets.DOCKER_USERNAME }}/ragflow_deps:${{ env.IMAGE_TAG }} \
-            --load \
-            .
-      - name: Push ragflow_deps to Docker Hub
-        if: ${{ github.event.inputs.push_to_dockerhub == 'true' }}
+          ref: ${{ env.RAGFLOW_VERSION }}
+          path: ragflow
+
+      - name: Checkout build config (current repo)
+        uses: actions/checkout@v4
+        with:
+          path: build-config
+
+      - name: Replace with optimized Dockerfile
         run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/ragflow_deps:${{ env.IMAGE_TAG }}
-      # ========== 第二步：构建 ragflow 主镜像 ==========
+          cp build-config/Dockerfile.arm64-optimized ragflow/Dockerfile
+          echo "✅ Dockerfile replaced with ARM64 optimized version"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      # ========== 构建 ragflow 主镜像 ==========
       # 前端使用 BUILDPLATFORM 原生 x86 架构极速编译
       # 后端运行时使用 linux/arm64 架构
-      - name: Build RAGFlow main image (ARM64 + native frontend)
+      # 依赖直接使用官方 infiniflow/ragflow_deps:latest
+      - name: Build and push RAGFlow ARM64 image
+        working-directory: ragflow
         run: |
-          cd ragflow
-          
-          # 使用优化后的 Dockerfile 构建
-          # --build-arg DEPS_IMAGE 指定我们刚才构建的 deps 镜像
           docker buildx build \
             --platform linux/arm64 \
-            --build-arg BASE_DEPS_IMAGE=${{ secrets.DOCKER_USERNAME }}/ragflow_deps:${{ env.IMAGE_TAG }} \
             -f Dockerfile \
             -t ${{ secrets.DOCKER_USERNAME }}/ragflow:${{ env.IMAGE_TAG }} \
-            --load \
+            --push \
             .
-      - name: Push RAGFlow main image to Docker Hub
-        if: ${{ github.event.inputs.push_to_dockerhub == 'true' }}
+
+      - name: ✅ Build completed
         run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/ragflow:${{ env.IMAGE_TAG }}
-      - name: Image summary
-        run: |
-          echo "✅ Build completed!"
-          echo "Deps image: ${{ secrets.DOCKER_USERNAME }}/ragflow_deps:${{ env.IMAGE_TAG }}"
-          echo "Main image: ${{ secrets.DOCKER_USERNAME }}/ragflow:${{ env.IMAGE_TAG }}"
-          echo "Architecture: linux/arm64"
+          echo "=========================================="
+          echo "  Build completed successfully!"
+          echo "  Image: ${{ secrets.DOCKER_USERNAME }}/ragflow:${{ env.IMAGE_TAG }}"
+          echo "  Architecture: linux/arm64"
+          echo "=========================================="
